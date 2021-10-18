@@ -153,6 +153,7 @@ class ShardTensor:
         if cur_pos < tensor.shape[0]:
             # allocate the rest of data on CPU
             self.cpu_tensor = tensor[cur_pos: ]
+            self.cpu_tensor.share_memory_()
             self.shard_tensor.append(self.cpu_tensor, -1)
             print(
                 f"LOG >>> Assign {100 - int(100 * cur_pos * 1.0 / tensor.shape[0])}% data to CPU"
@@ -227,4 +228,12 @@ class ShardTensor:
     
     def size(self, dim):
         return self.shard_tensor.size(dim)
+    
+    def __del__(self):
+        if self.cpu_tensor is not None:
+            torch_qv.unregister_host_memory(self.cpu_tensor)
+        self.shard_tensor.free()
+        del self.cpu_tensor
+
+
 

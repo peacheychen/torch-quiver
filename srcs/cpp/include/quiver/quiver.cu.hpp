@@ -22,6 +22,15 @@
         cudaHostRegister(register_ptr + pos, s, flag); \
     }}
 
+#define quiverUnregister(ptr, size); \
+    { size_t BLOCK = 1000000000; \
+    void *register_ptr = (void *)ptr; \
+    for (size_t pos = 0; pos < size; pos += BLOCK) { \
+        size_t s = BLOCK; \
+        if (size - pos < BLOCK) { s = size - pos; } \
+        cudaHostUnregister(register_ptr + pos); \
+    }}
+
 namespace quiver
 {
 template <typename T>
@@ -172,7 +181,7 @@ class quiver<T, CUDA>
     // Zero-Map Mode Parameters End
 
     // Quiver Mode
-    QuiverMode quiver_mode;
+    QuiverMode quiver_mode_;
 
     const sample_option opt_;
 
@@ -182,7 +191,7 @@ class quiver<T, CUDA>
           col_idx_(std::move(col_idx)),
           edge_idx_(std::move(edge_idx)),
           opt_(false, !edge_idx.empty(), true),
-          quiver_mode(DMA)
+          quiver_mode_(THRUST)
     {
     }
 
@@ -197,17 +206,17 @@ class quiver<T, CUDA>
     //       edge_weight_(std::move(edge_weight)),
     //       bucket_edge_weight_(std::move(bucket_edge_weight)),
     //       opt_(true, !edge_idx.empty(), true),
-    //       quiver_mode(DMA)
+    //       quiver_mode_(THRUST)
     // {
     // }
-    quiver(T *row_ptr, T *col_idx, T *edge_idx, T node_count, T edge_count)
+    quiver(T *row_ptr, T *col_idx, T *edge_idx, T node_count, T edge_count, QuiverMode quiver_mode)
         : row_ptr_mapped_(std::move(row_ptr)),
           col_idx_mapped_(std::move(col_idx)),
           edge_idx_mapped(std::move(edge_idx)),
           node_count_(node_count),
           edge_count_(edge_count),
           opt_(false, edge_idx != nullptr, false),
-          quiver_mode(ZERO_COPY)
+          quiver_mode_(quiver_mode)
     {
     }
 
@@ -275,15 +284,24 @@ class quiver<T, CUDA>
 
     virtual ~quiver() = default;
 
+    void free(){
+        if(quiver_mode_ == GPU){
+            cudaFree((void*)row_ptr_mapped_);
+            cudaFree((void*)col_idx_mapped_);
+            cudaFree((void*)edge_idx_mapped);
+        }
+
+    }
+
     size_t size() const
     {
-        if (quiver_mode == DMA) { return row_ptr_.size(); }
+        if (quiver_mode_ == THRUST) { return row_ptr_.size(); }
         return node_count_;
     }
 
     size_t edge_counts() const
     {
-        if (quiver_mode == DMA) { return col_idx_.size(); }
+        if (quiver_mode_ == THRUST) { return col_idx_.size(); }
         return edge_count_;
     }
 
@@ -296,7 +314,7 @@ class quiver<T, CUDA>
                 thrust::device_ptr<const T> input_end,
                 thrust::device_ptr<T> output_begin) const
     {
-        if (quiver_mode == DMA) {
+        if (quiver_mode_ == THRUST) {
             thrust::transform(
                 thrust::cuda::par.on(stream), input_begin, input_end,
                 output_begin,
@@ -315,7 +333,7 @@ class quiver<T, CUDA>
                       thrust::device_ptr<const T> input_end,
                       thrust::device_ptr<T> output_begin) const
     {
-        if (quiver_mode == DMA) {
+        if (quiver_mode_ == THRUST) {
             async_transform(
                 kernal_option(stream), input_begin, input_end, output_begin,
                 get_adj_diff<T>(thrust::raw_pointer_cast(row_ptr_.data()),
@@ -340,7 +358,7 @@ class quiver<T, CUDA>
         auto end = thrust::make_zip_iterator(
             thrust::make_tuple(i + len, input_end, output_count_begin + len,
                                output_ptr_begin + len));
-        if (quiver_mode == DMA) {
+        if (quiver_mode_ == THRUST) {
             thrust::for_each(
                 thrust::cuda::par.on(stream), begin, end,
                 sample_functor<T, W>(
@@ -370,7 +388,7 @@ class quiver<T, CUDA>
         constexpr int BLOCK_ROWS = 128 / WARP_SIZE;
         const dim3 block(WARP_SIZE, BLOCK_ROWS);
         const dim3 grid((input_size + block.y - 1) / block.y);
-        if (quiver_mode == DMA) {
+        if (quiver_mode_ == THRUST) {
             CSRRowWiseSampleKernel<T, BLOCK_ROWS><<<grid, block, 0, stream>>>(
                 0, k, input_size, input_begin,
                 thrust::raw_pointer_cast(row_ptr_.data()),
@@ -397,7 +415,7 @@ class quiver<T, CUDA>
         auto end = thrust::make_zip_iterator(
             thrust::make_tuple(i + len, input_end, output_count_begin + len,
                                output_ptr_begin + len));
-        if (quiver_mode == DMA) {
+        if (quiver_mode_ == THRUST) {
             async_for_each(
                 kernal_option(stream), begin, end,
                 sample_functor<T, W>(

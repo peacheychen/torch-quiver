@@ -52,6 +52,19 @@ class ShardTensorItem
 
 };
 
+size_t get_tensor_bytes(torch::Tensor tensor){
+    int dim = tensor.dim();
+    size_t total_bytes = tensor.element_size();
+    for(int index = 0; index < dim; index++){
+        total_bytes *= tensor.sizes()[index];
+    }
+    return total_bytes;
+}
+void unregister_host_memory(torch::Tensor& cpu_tensor){      
+    size_t data_size = get_tensor_bytes(cpu_tensor);  
+    quiverUnregister(cpu_tensor.data_ptr<void>(), data_size)
+}
+
 class ShardTensor
 {
   public:
@@ -62,15 +75,6 @@ class ShardTensor
 
     }
 
-    size_t get_tensor_bytes(torch::Tensor tensor){
-        // assume it's float 
-        int dim = tensor.dim();
-        size_t total_bytes = 4;
-        for(int index = 0; index < dim; index++){
-            total_bytes *= tensor.sizes()[index];
-        }
-        return total_bytes;
-    }
     std::vector<int> get_tensor_shape(torch::Tensor tensor){
         std::vector<int> shape; 
         int dim = tensor.dim();
@@ -321,12 +325,14 @@ class ShardTensor
 
     int device_count() const { return device_count_; }
 
-    void unregister(torch::Tensor& cpu_tensor){
-        
-        std::cout<<"begin unregister"<<std::endl;
-        cudaHostUnregister((void*)cpu_tensor.data_ptr<float>());
-        std::cout<<"end unregister"<<std::endl;
-
+    void free(){
+        // we only free GPU memory and leave cpu memory management to Python
+        for(int index=0; index < dev_ptrs_.size(); index++){
+            if(tensor_devices_[index] >= 0){
+                cudaSetDevice(tensor_devices_[index]);
+                cudaFree(dev_ptrs_[index]);
+            }
+        }
     }
     
 
@@ -398,6 +404,8 @@ void register_cuda_quiver_feature(pybind11::module &m)
 {
     m.def("init_p2p", &quiver::init_p2p,
             py::call_guard<py::gil_scoped_release>());
+
+    m.def("unregister_host_memory", &quiver::unregister_host_memory, py::call_guard<py::gil_scoped_release>());
     
     m.def("can_device_access_peer", &quiver::can_device_access_peer,
             py::call_guard<py::gil_scoped_release>());
@@ -414,8 +422,6 @@ void register_cuda_quiver_feature(pybind11::module &m)
         .def(py::init<int>())
         .def("__getitem__", &quiver::ShardTensor::operator[],
              py::call_guard<py::gil_scoped_release>())
-        .def("unregister", &quiver::ShardTensor::unregister,
-            py::call_guard<py::gil_scoped_release>())
         .def("shape", &quiver::ShardTensor::shape,
              py::call_guard<py::gil_scoped_release>())
         .def("numel", &quiver::ShardTensor::numel,
@@ -433,7 +439,7 @@ void register_cuda_quiver_feature(pybind11::module &m)
         .def("append", py::overload_cast<quiver::ShardTensorItem>(&quiver::ShardTensor::append),
              py::call_guard<py::gil_scoped_release>())
         .def("share_ipc", &quiver::ShardTensor::share_ipc,
-             py::call_guard<py::gil_scoped_release>());
-             
-            
+             py::call_guard<py::gil_scoped_release>())
+        .def("free", &quiver::ShardTensor::free,
+            py::call_guard<py::gil_scoped_release>());
 }

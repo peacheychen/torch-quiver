@@ -1,7 +1,7 @@
 import torch
 from torch import Tensor
 from torch_sparse import SparseTensor
-import torch_quiver as qv
+import torch_quiver as torch_qv
 from typing import List, Optional, Tuple, NamedTuple, Union, Callable
 
 from .. import utils as quiver_utils
@@ -104,3 +104,9 @@ class GraphSageSampler:
     def lazy_from_ipc_handle(cls, ipc_handle):
         csr_topo, sizes, mode = ipc_handle
         return cls(csr_topo, sizes, -1, mode)
+    
+    def __del__(self):
+        torch_qv.unregister_host_memory(self.csr_topo.indptr)
+        torch_qv.unregister_host_memory(self.csr_topo.indices)
+        self.quiver.free()
+        del self.csr_topo

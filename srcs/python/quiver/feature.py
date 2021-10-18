@@ -76,7 +76,8 @@ class Feature:
                 cpu_tensor, self.csr_topo.feature_order = reindex_feature(self.csr_topo, cpu_tensor, shuffle_ratio)
             self.feature_order = self.csr_topo.feature_order.to(self.rank)
         cache_part, self.cpu_part = self.partition(cpu_tensor, cache_memory_budget)
-        self.cpu_part = self.cpu_part.clone()
+        #self.cpu_part = self.cpu_part.clone()
+        self.cpu_part.share_memory_()
         if cache_part.shape[0] > 0 and self.cache_policy == "device_replicate":
             for device in self.device_list:
                 shard_tensor = ShardTensor(self.rank, ShardTensorConfig({}))
@@ -229,3 +230,12 @@ class Feature:
             self.feature_order = csr_topo.feature_order.to(self.rank)
 
         self.ipc_handle = None
+
+    def __del__(self):
+        for rank in self.device_tensor_list:
+            del self.device_tensor_list[rank]
+        
+        for clique in self.clique_tensor_list:
+            del self.clique_tensor_list[clique]
+        
+        del self.cpu_tensor

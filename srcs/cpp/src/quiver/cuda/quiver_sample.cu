@@ -86,6 +86,7 @@ class TorchQuiver
     {
         pool_ = stream_pool(num_workers);
     }
+    
 
     using T = int64_t;
     using W = float;
@@ -95,6 +96,9 @@ class TorchQuiver
     sample_sub(const torch::Tensor &vertices, int k) const
     {
         return sample_sub_with_stream(0, vertices, k);
+    }
+    void free(){
+        quiver_.free();
     }
 
     std::tuple<torch::Tensor, torch::Tensor>
@@ -363,6 +367,8 @@ TorchQuiver new_quiver_from_csr_array(torch::Tensor &input_indptr,
     const size_t edge_count = input_indices.size(0);
 
     bool use_eid = input_edge_idx.size(0) == edge_count;
+    QuiverMode quiver_mode = UVA;
+
 
 
     /*
@@ -492,5 +498,7 @@ void register_cuda_quiver_sample(pybind11::module &m)
         .def("sample_sub", &quiver::TorchQuiver::sample_sub_with_stream,
              py::call_guard<py::gil_scoped_release>())
         .def("sample_neighbor", &quiver::TorchQuiver::sample_neighbor,
-             py::call_guard<py::gil_scoped_release>());
+             py::call_guard<py::gil_scoped_release>())
+        .def("free", &quiver::TorchQuiver::free, 
+            py::call_guard<py::gil_scoped_release>());
 }
