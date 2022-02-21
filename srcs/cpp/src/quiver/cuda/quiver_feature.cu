@@ -7,12 +7,16 @@
 #include <quiver/quiver.cu.hpp>
 #include <quiver/shard_tensor.cu.hpp>
 #include <torch/extension.h>
+#include <ATen/ATen.h>
 
 #include <atomic>
 #include <iostream>
 #include <string>
 #include <torch/csrc/utils/python_numbers.h>
 #include <unordered_map>
+#include <iostream>
+
+#define quote(x) #x
 
 namespace quiver
 {
@@ -439,10 +443,32 @@ bool can_device_access_peer(int src_device_index, int dst_device_index)
     return (access_i_j == 1) && (access_j_i == 1);
 }
 
+void check_pytorch_allocator(){
+    int current_device = 0;
+    cudaGetDevice(&current_device);
+    auto device = torch::Device(torch::kCUDA, current_device);
+
+    auto allocator_cuda = at::cuda::getCUDADeviceAllocator();
+    std::cout<<"Check Default Cuda Memory Allocator:\t"<<typeid((*allocator_cuda)).name()<<"\t"<< quote(*allocator_cuda) <<"\n";
+
+    
+    auto options = torch::TensorOptions()
+    .dtype(at::kFloat)
+    .device(torch::kCUDA, current_device);
+    std::vector<int64_t> res_shape{1, 1, 1};
+    auto res = torch::empty(res_shape, options);
+    auto storage = res.storage();
+    auto allocator_tensor = storage.allocator();
+    std::cout<<"Check CudaTensor Memory Allocator:\t"<<typeid((*allocator_tensor)).name()<<"\t"<< quote(*allocator_tensor) <<"\n";
+}
+
 }  // namespace quiver
 void register_cuda_quiver_feature(pybind11::module &m)
 {
     m.def("init_p2p", &quiver::init_p2p,
+          py::call_guard<py::gil_scoped_release>());
+
+    m.def("check_pytorch_allocator", &quiver::check_pytorch_allocator,
           py::call_guard<py::gil_scoped_release>());
 
     m.def("can_device_access_peer", &quiver::can_device_access_peer,
