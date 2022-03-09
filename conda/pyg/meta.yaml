@@ -20,7 +20,7 @@ requirements:
     - pytorch-sparse
     - pytorch-cluster
     - pytorch-spline-conv
-    # - torch-geometric
+    - pyg
     - networkx>=2.4
     - tqdm
     - jinja2
