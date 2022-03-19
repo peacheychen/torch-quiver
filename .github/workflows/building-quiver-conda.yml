@@ -63,7 +63,6 @@ jobs:
 
       - name: Build Conda package
         run: |
-          conda install pytorch torchvision torchaudio cpuonly -c pytorch
           ./conda/pyg/build_conda.sh ${{ matrix.python-version }} ${{ matrix.torch-version }} ${{ matrix.cuda-version }}
         shell:
           bash -l {0}
