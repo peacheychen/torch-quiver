@@ -36,8 +36,4 @@ echo "PyTorch $TORCH_VERSION+$CUDA_VERSION"
 echo "- $CONDA_PYTORCH_CONSTRAINT"
 echo "- $CONDA_CUDATOOLKIT_CONSTRAINT"
 
-conda install pytorch torchvision torchaudio cpuonly -c pytorch
-
-echo "install torch complete"
-
 conda build . -c pytorch -c pyg -c default -c nvidia --output-folder "$HOME/conda-bld"
